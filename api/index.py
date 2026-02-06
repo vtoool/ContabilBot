@@ -1,6 +1,6 @@
 import os
 import requests
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, make_response
 import telebot
 from telebot import types
 from datetime import datetime
@@ -37,19 +37,16 @@ def save_expense(item, amount, category="Uncategorized"):
         "Prefer": "return=minimal"
     }
     
-    # AI Categorization
     if category == "Uncategorized":
         try:
             chat_completion = groq_client.chat.completions.create(
                 messages=[{"role": "user", "content": f"Categorize this expense item into one word (e.g., Food, Transport, Tech). Output ONLY the word: '{item}'"}],
                 model="llama-3.3-70b-versatile",
             )
-            # Cleanup AI response to get just the word
             ai_cat = chat_completion.choices[0].message.content.strip().split()[0].replace(".", "")
-            if ai_cat:
-                category = ai_cat
-        except Exception as e:
-            print(f"AI Error: {e}")
+            if ai_cat: category = ai_cat
+        except:
+            pass
 
     payload = {"item": item, "amount": amount, "category": category}
     requests.post(url, json=payload, headers=headers)
@@ -65,22 +62,18 @@ def ask_ai(prompt):
     except Exception as e:
         return f"My brain hurts: {e}"
 
-# --- DASHBOARD API (Secure Proxy) ---
+# --- API ROUTES ---
+
 @app.route('/api/stats', methods=['GET'])
 def get_dashboard_stats():
-    # 1. Security Check
-    auth_header = request.headers.get('X-Dashboard-Password')
-    if auth_header != DASHBOARD_PASSWORD:
+    if request.headers.get('X-Dashboard-Password') != DASHBOARD_PASSWORD:
         return jsonify({"error": "Unauthorized"}), 401
 
-    # 2. Fetch Data
     cat_res = run_query("expenses?select=category,amount")
     hist_res = run_query("expenses?select=item,amount,created_at&order=created_at.desc&limit=10")
     
-    if cat_res.status_code != 200 or hist_res.status_code != 200:
-        return jsonify({"error": "Database Error"}), 500
+    if cat_res.status_code != 200: return jsonify({"error": "DB Error"}), 500
 
-    # 3. Process Data
     expenses = cat_res.json()
     category_totals = {}
     for ex in expenses:
@@ -93,21 +86,13 @@ def get_dashboard_stats():
         "total_spent": sum(category_totals.values())
     })
 
-# --- UNIFIED ROUTE (The Fix for Vercel) ---
-# This single function handles BOTH the website (GET) and the bot (POST)
+# --- MAIN ROUTE (HTML + BOT) ---
 @app.route('/', methods=['GET', 'POST'])
 def handle_root():
-    # 1. If Browser -> Show Dashboard
     if request.method == 'GET':
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        html_path = os.path.join(base_dir, '../public/index.html')
-        try:
-            with open(html_path, 'r') as f:
-                return f.read()
-        except FileNotFoundError:
-            return "Error: Dashboard file not found.", 404
-
-    # 2. If Telegram -> Run Bot
+        # Serve the embedded HTML directly
+        return make_response(DASHBOARD_HTML)
+    
     elif request.method == 'POST':
         if not TOKEN: return 'Error', 500
         json_str = request.get_data().decode('UTF-8')
@@ -115,9 +100,7 @@ def handle_root():
         bot.process_new_updates([update])
         return 'OK', 200
 
-# --- BOT COMMAND HANDLERS ---
-# (We need these so the bot knows what to do!)
-
+# --- BOT LOGIC ---
 def get_main_menu():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row('💰 Total', '🏆 Highest')
@@ -127,7 +110,7 @@ def get_main_menu():
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-    bot.send_message(message.chat.id, "🤖 **ContabilBOT CFO**\nReady to judge your spending.", parse_mode="Markdown", reply_markup=get_main_menu())
+    bot.send_message(message.chat.id, "🤖 **ContabilBOT CFO**\nReady.", parse_mode="Markdown", reply_markup=get_main_menu())
 
 @bot.message_handler(func=lambda m: m.text == '💰 Total')
 @bot.message_handler(commands=['total'])
@@ -162,12 +145,10 @@ def run_analysis(message):
     bot.send_chat_action(message.chat.id, 'typing')
     res = run_query("expenses?select=item,amount,category&order=created_at.desc&limit=20")
     if not res.json():
-        bot.reply_to(message, "No data to analyze.")
+        bot.reply_to(message, "No data.")
         return
-    
     expense_list = "\n".join([f"- {x['amount']} on {x['item']} ({x['category']})" for x in res.json()])
-    prompt = f"Last 20 expenses:\n{expense_list}\nRoast this user's spending habits. Be rude. Short verdict."
-    analysis = ask_ai(prompt)
+    analysis = ask_ai(f"Last 20 expenses:\n{expense_list}\nRoast this user's spending habits.")
     bot.reply_to(message, f"🧠 **Verdict:**\n{analysis}", parse_mode="Markdown", reply_markup=get_main_menu())
 
 @bot.message_handler(func=lambda message: True)
@@ -179,5 +160,87 @@ def handle_expense(message):
         item = ' '.join(parts[1:])
         category = save_expense(item, amount)
         bot.reply_to(message, f"💸 Saved: {amount} for {item}.\n📂 {category}", reply_markup=get_main_menu())
-    except Exception:
-        pass
+    except: pass
+
+# --- EMBEDDED DASHBOARD HTML ---
+DASHBOARD_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ContabilBOT CFO</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-900 text-white font-sans antialiased">
+    <div id="loginModal" class="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
+        <div class="bg-gray-800 p-8 rounded-xl w-96 text-center border border-gray-700">
+            <h2 class="text-2xl font-bold mb-4 text-green-400">🔐 Login</h2>
+            <input type="password" id="passwordInput" class="w-full p-3 bg-gray-900 border border-gray-600 rounded text-white mb-4" placeholder="Password">
+            <button onclick="login()" class="w-full bg-green-500 hover:bg-green-600 text-black font-bold py-3 rounded">Unlock</button>
+        </div>
+    </div>
+    <div id="dashboard" class="hidden container mx-auto p-6">
+        <header class="flex justify-between items-center mb-10">
+            <h1 class="text-3xl font-bold text-green-400">💰 Financial Command Center</h1>
+            <button onclick="logout()" class="text-xs text-gray-500 hover:text-white">Logout</button>
+        </header>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
+            <div class="bg-gray-800 p-6 rounded-2xl border border-gray-700">
+                <h3 class="text-gray-400 text-sm uppercase">Total Spent</h3>
+                <p id="totalSpent" class="text-4xl font-mono font-bold text-white mt-2">Loading...</p>
+            </div>
+            <div class="bg-gray-800 p-6 rounded-2xl border border-gray-700">
+                <h3 class="text-gray-400 text-sm uppercase">Status</h3>
+                <p class="text-4xl font-mono font-bold text-green-400 mt-2">ACTIVE</p>
+            </div>
+        </div>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="bg-gray-800 p-6 rounded-2xl border border-gray-700 lg:col-span-1">
+                <canvas id="catChart"></canvas>
+            </div>
+            <div class="bg-gray-800 p-6 rounded-2xl border border-gray-700 lg:col-span-2">
+                <table class="w-full text-left">
+                    <thead><tr class="text-gray-500 border-b border-gray-700"><th class="pb-3">Date</th><th class="pb-3">Item</th><th class="pb-3 text-right">Amount</th></tr></thead>
+                    <tbody id="historyTable" class="text-gray-300"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <script>
+        const API_URL = '/api/stats';
+        function login() {
+            const pass = document.getElementById('passwordInput').value;
+            localStorage.setItem('dash_pass', pass);
+            loadDashboard();
+        }
+        function logout() { localStorage.removeItem('dash_pass'); location.reload(); }
+        async function loadDashboard() {
+            const pass = localStorage.getItem('dash_pass');
+            if (!pass) return;
+            try {
+                const res = await fetch(API_URL, { headers: { 'X-Dashboard-Password': pass } });
+                if (res.status === 401) { alert("Wrong Password!"); return; }
+                const data = await res.json();
+                document.getElementById('loginModal').classList.add('hidden');
+                document.getElementById('dashboard').classList.remove('hidden');
+                document.getElementById('totalSpent').innerText = data.total_spent.toLocaleString() + ' MDL';
+                new Chart(document.getElementById('catChart'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: Object.keys(data.categories),
+                        datasets: [{ data: Object.values(data.categories), backgroundColor: ['#34D399', '#60A5FA', '#F87171', '#FBBF24', '#A78BFA', '#F472B6'] }]
+                    },
+                    options: { plugins: { legend: { position: 'bottom', labels: { color: '#9CA3AF' } } } }
+                });
+                document.getElementById('historyTable').innerHTML = data.history.map(item => `
+                    <tr class="border-b border-gray-800"><td class="py-3 text-sm text-gray-400">${new Date(item.created_at).toLocaleDateString()}</td><td class="py-3">${item.item}</td><td class="py-3 text-right text-green-400">${item.amount}</td></tr>
+                `).join('');
+            } catch (err) { console.error(err); }
+        }
+        if(localStorage.getItem('dash_pass')) loadDashboard();
+    </script>
+</body>
+</html>
+"""

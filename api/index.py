@@ -330,4 +330,21 @@ def handle_expense(message):
 
 @app.route("/", methods=["GET"])
 def index():
-    return open("../public/index.html").read()
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    html_path = os.path.join(base_dir, "../public/index.html")
+
+    try:
+        with open(html_path, "r") as f:
+            return f.read()
+    except FileNotFoundError:
+        return "Error: Could not find dashboard file.", 404
+
+
+@app.route("/", methods=["POST"])
+def webhook():
+    if not TOKEN:
+        return "Error", 500
+    json_str = request.get_data().decode("UTF-8")
+    update = telebot.types.Update.de_json(json_str)
+    bot.process_new_updates([update])
+    return "OK", 200

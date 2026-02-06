@@ -9,14 +9,15 @@ from groq import Groq
 app = Flask(__name__)
 
 # --- CONFIG ---
-TOKEN = os.environ.get('TELEGRAM_TOKEN')
-SUPABASE_URL = os.environ.get('SUPABASE_URL')
-SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
-GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
-DASHBOARD_PASSWORD = os.environ.get('DASHBOARD_PASSWORD')
+TOKEN = os.environ.get("TELEGRAM_TOKEN")
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+DASHBOARD_PASSWORD = os.environ.get("DASHBOARD_PASSWORD")
 
 bot = telebot.TeleBot(TOKEN, threaded=False)
 groq_client = Groq(api_key=GROQ_API_KEY)
+
 
 # --- DATABASE HELPERS ---
 def run_query(endpoint, params=None):
@@ -24,9 +25,10 @@ def run_query(endpoint, params=None):
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
     return requests.get(url, headers=headers, params=params)
+
 
 def save_expense(item, amount, category="Uncategorized"):
     url = f"{SUPABASE_URL}/rest/v1/expenses"
@@ -34,23 +36,35 @@ def save_expense(item, amount, category="Uncategorized"):
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
         "Content-Type": "application/json",
-        "Prefer": "return=minimal"
+        "Prefer": "return=minimal",
     }
-    
+
     if category == "Uncategorized":
         try:
             chat_completion = groq_client.chat.completions.create(
-                messages=[{"role": "user", "content": f"Categorize this expense item into one word (e.g., Food, Transport, Tech). Output ONLY the word: '{item}'"}],
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"Categorize this expense item into one word (e.g., Food, Transport, Tech). Output ONLY the word: '{item}'",
+                    }
+                ],
                 model="llama-3.3-70b-versatile",
             )
-            ai_cat = chat_completion.choices[0].message.content.strip().split()[0].replace(".", "")
-            if ai_cat: category = ai_cat
+            ai_cat = (
+                chat_completion.choices[0]
+                .message.content.strip()
+                .split()[0]
+                .replace(".", "")
+            )
+            if ai_cat:
+                category = ai_cat
         except:
             pass
 
     payload = {"item": item, "amount": amount, "category": category}
     requests.post(url, json=payload, headers=headers)
     return category
+
 
 def ask_ai(prompt):
     try:
@@ -62,105 +76,185 @@ def ask_ai(prompt):
     except Exception as e:
         return f"My brain hurts: {e}"
 
+
 # --- API ROUTES ---
 
-@app.route('/api/stats', methods=['GET'])
+
+@app.route("/api/stats", methods=["GET"])
 def get_dashboard_stats():
-    if request.headers.get('X-Dashboard-Password') != DASHBOARD_PASSWORD:
+    if request.headers.get("X-Dashboard-Password") != DASHBOARD_PASSWORD:
         return jsonify({"error": "Unauthorized"}), 401
 
     cat_res = run_query("expenses?select=category,amount")
-    hist_res = run_query("expenses?select=item,amount,created_at&order=created_at.desc&limit=10")
-    
-    if cat_res.status_code != 200: return jsonify({"error": "DB Error"}), 500
+    hist_res = run_query(
+        "expenses?select=item,amount,created_at&order=created_at.desc&limit=10"
+    )
+
+    if cat_res.status_code != 200:
+        return jsonify({"error": "DB Error"}), 500
 
     expenses = cat_res.json()
     category_totals = {}
     for ex in expenses:
-        cat = ex['category'] or "Uncategorized"
-        category_totals[cat] = category_totals.get(cat, 0) + float(ex['amount'])
+        cat = ex["category"] or "Uncategorized"
+        category_totals[cat] = category_totals.get(cat, 0) + float(ex["amount"])
 
-    return jsonify({
-        "categories": category_totals,
-        "history": hist_res.json(),
-        "total_spent": sum(category_totals.values())
-    })
+    return jsonify(
+        {
+            "categories": category_totals,
+            "history": hist_res.json(),
+            "total_spent": sum(category_totals.values()),
+        }
+    )
+
 
 # --- MAIN ROUTE (HTML + BOT) ---
-@app.route('/', methods=['GET', 'POST'])
+@app.route("/", methods=["GET", "POST"])
 def handle_root():
-    if request.method == 'GET':
+    if request.method == "GET":
         # Serve the embedded HTML directly
         return make_response(DASHBOARD_HTML)
-    
-    elif request.method == 'POST':
-        if not TOKEN: return 'Error', 500
-        json_str = request.get_data().decode('UTF-8')
+
+    elif request.method == "POST":
+        if not TOKEN:
+            return "Error", 500
+        json_str = request.get_data().decode("UTF-8")
         update = telebot.types.Update.de_json(json_str)
         bot.process_new_updates([update])
-        return 'OK', 200
+        return "OK", 200
+
 
 # --- BOT LOGIC ---
 def get_main_menu():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row('💰 Total', '🏆 Highest')
-    markup.row('📜 History', '🧠 Analyze')
-    markup.row('❓ Help')
+    markup.row("💰 Total", "🏆 Highest")
+    markup.row("📜 History", "🧠 Analyze")
+    markup.row("❓ Help")
     return markup
 
-@bot.message_handler(commands=['start', 'help'])
-def send_welcome(message):
-    bot.send_message(message.chat.id, "🤖 **ContabilBOT CFO**\nReady.", parse_mode="Markdown", reply_markup=get_main_menu())
 
-@bot.message_handler(func=lambda m: m.text == '💰 Total')
-@bot.message_handler(commands=['total'])
+@bot.message_handler(commands=["start"])
+def send_welcome(message):
+    bot.send_message(
+        message.chat.id,
+        "🤖 **ContabilBOT CFO Online**\nI'm ready to judge your spending.\nType `/help` for instructions.",
+        parse_mode="Markdown",
+        reply_markup=get_main_menu(),
+    )
+
+
+@bot.message_handler(commands=["help"])
+def send_help(message):
+    help_text = """
+    📚 **ContabilBOT User Manual**
+
+    **1. Tracking Expenses:**
+    Just type the amount and the item.
+    • `50 Coffee`
+    • `200 Taxi to airport`
+    *(I will auto-categorize it for you)*
+
+    **2. The Dashboard:**
+    View your charts and full history here:
+    👉 [Open Financial Command Center](https://contabil-bot.vercel.app/)
+    *(You will need your password)*
+
+    **3. Commands:**
+    💰 **Total** - See how much you spent.
+    🏆 **Highest** - Your biggest expense.
+    🧠 **Analyze** - Get a brutal AI roast of your habits.
+    """
+    bot.send_message(
+        message.chat.id, help_text, parse_mode="Markdown", reply_markup=get_main_menu()
+    )
+
+
+@bot.message_handler(func=lambda m: m.text == "❓ Help")
+def help_btn(message):
+    send_help(message)
+
+
+@bot.message_handler(func=lambda m: m.text == "💰 Total")
+@bot.message_handler(commands=["total"])
 def show_total(message):
     res = run_query("expenses?select=amount")
     if res.status_code == 200:
-        total = sum([float(x['amount']) for x in res.json()])
-        bot.reply_to(message, f"💰 Total: {total:,.2f} MDL", reply_markup=get_main_menu())
+        total = sum([float(x["amount"]) for x in res.json()])
+        bot.reply_to(
+            message, f"💰 Total: {total:,.2f} MDL", reply_markup=get_main_menu()
+        )
 
-@bot.message_handler(func=lambda m: m.text == '🏆 Highest')
-@bot.message_handler(commands=['highest'])
+
+@bot.message_handler(func=lambda m: m.text == "🏆 Highest")
+@bot.message_handler(commands=["highest"])
 def show_highest(message):
     res = run_query("expenses?select=item,amount&order=amount.desc&limit=1")
     if res.status_code == 200 and len(res.json()) > 0:
         top = res.json()[0]
-        bot.reply_to(message, f"🏆 Highest: {top['amount']} on {top['item']}", reply_markup=get_main_menu())
+        bot.reply_to(
+            message,
+            f"🏆 Highest: {top['amount']} on {top['item']}",
+            reply_markup=get_main_menu(),
+        )
 
-@bot.message_handler(func=lambda m: m.text == '📜 History')
-@bot.message_handler(commands=['history'])
+
+@bot.message_handler(func=lambda m: m.text == "📜 History")
+@bot.message_handler(commands=["history"])
 def show_history(message):
-    res = run_query("expenses?select=item,amount,category,created_at&order=created_at.desc&limit=5")
+    res = run_query(
+        "expenses?select=item,amount,category,created_at&order=created_at.desc&limit=5"
+    )
     if res.status_code == 200:
         text = "📜 **Recent:**\n"
         for ex in res.json():
-            date_str = datetime.fromisoformat(ex['created_at'].replace('Z', '+00:00')).strftime("%d/%m")
+            date_str = datetime.fromisoformat(
+                ex["created_at"].replace("Z", "+00:00")
+            ).strftime("%d/%m")
             text += f"`{date_str}`: {ex['amount']} - {ex['item']}\n"
         bot.reply_to(message, text, parse_mode="Markdown", reply_markup=get_main_menu())
 
-@bot.message_handler(func=lambda m: m.text == '🧠 Analyze')
-@bot.message_handler(commands=['analyze'])
+
+@bot.message_handler(func=lambda m: m.text == "🧠 Analyze")
+@bot.message_handler(commands=["analyze"])
 def run_analysis(message):
-    bot.send_chat_action(message.chat.id, 'typing')
-    res = run_query("expenses?select=item,amount,category&order=created_at.desc&limit=20")
+    bot.send_chat_action(message.chat.id, "typing")
+    res = run_query(
+        "expenses?select=item,amount,category&order=created_at.desc&limit=20"
+    )
     if not res.json():
         bot.reply_to(message, "No data.")
         return
-    expense_list = "\n".join([f"- {x['amount']} on {x['item']} ({x['category']})" for x in res.json()])
-    analysis = ask_ai(f"Last 20 expenses:\n{expense_list}\nRoast this user's spending habits.")
-    bot.reply_to(message, f"🧠 **Verdict:**\n{analysis}", parse_mode="Markdown", reply_markup=get_main_menu())
+    expense_list = "\n".join(
+        [f"- {x['amount']} on {x['item']} ({x['category']})" for x in res.json()]
+    )
+    analysis = ask_ai(
+        f"Last 20 expenses:\n{expense_list}\nRoast this user's spending habits."
+    )
+    bot.reply_to(
+        message,
+        f"🧠 **Verdict:**\n{analysis}",
+        parse_mode="Markdown",
+        reply_markup=get_main_menu(),
+    )
+
 
 @bot.message_handler(func=lambda message: True)
 def handle_expense(message):
     try:
         parts = message.text.strip().split()
-        if len(parts) < 2: return
+        if len(parts) < 2:
+            return
         amount = float(parts[0])
-        item = ' '.join(parts[1:])
+        item = " ".join(parts[1:])
         category = save_expense(item, amount)
-        bot.reply_to(message, f"💸 Saved: {amount} for {item}.\n📂 {category}", reply_markup=get_main_menu())
-    except: pass
+        bot.reply_to(
+            message,
+            f"💸 Saved: {amount} for {item}.\n📂 {category}",
+            reply_markup=get_main_menu(),
+        )
+    except:
+        pass
+
 
 # --- EMBEDDED DASHBOARD HTML ---
 DASHBOARD_HTML = """

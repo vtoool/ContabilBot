@@ -1,5 +1,5 @@
-Flask
-pyTelegramBotAPI
-requests
-groq
-python-dotenv
+Flask==3.0.0
+pyTelegramBotAPI==4.15.0
+requests==2.31.0
+groq==0.4.0
+python-dotenv==1.0.0

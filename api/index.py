@@ -720,13 +720,37 @@ def api_chat():
 @app.route("/", methods=["GET"])
 def index():
     """Serve the dashboard HTML"""
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    html_path = os.path.join(base_dir, "../public/index.html")
+    # Try multiple paths for Vercel compatibility
+    possible_paths = [
+        os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "../public/index.html"
+        ),
+        os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "../../public/index.html"
+        ),
+        os.path.join(os.getcwd(), "public/index.html"),
+        "/var/task/public/index.html",
+        "/var/task/../public/index.html",
+    ]
 
-    try:
-        with open(html_path, "r", encoding="utf-8") as f:
-            return f.read()
-    except FileNotFoundError:
+    # Add absolute path from repo root if we can detect it
+    vercel_root = os.environ.get("VERCEL", "")
+    if vercel_root:
+        possible_paths.insert(0, "/var/task/public/index.html")
+
+    html_content = None
+    for html_path in possible_paths:
+        try:
+            if os.path.exists(html_path):
+                with open(html_path, "r", encoding="utf-8") as f:
+                    html_content = f.read()
+                    break
+        except Exception:
+            continue
+
+    if html_content is not None:
+        return html_content
+    else:
         return (
             "Error: Dashboard file not found. Please ensure public/index.html exists.",
             404,

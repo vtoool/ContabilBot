@@ -2,7 +2,7 @@ import os
 import requests
 from flask import Flask, request
 import telebot
-from telebot import types # <--- Needed for buttons
+from telebot import types
 from datetime import datetime
 from groq import Groq
 
@@ -14,28 +14,20 @@ SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
 
-# Initialize Bot & AI
 bot = telebot.TeleBot(TOKEN, threaded=False)
 groq_client = Groq(api_key=GROQ_API_KEY)
 
-# --- KEYBOARD MENU ---
-# --- KEYBOARD MENU ---
+# --- THE KEYBOARD (The Fix) ---
 def get_main_menu():
-    # is_persistent=True keeps the menu open even after you click a button
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, is_persistent=True)
-    
-    # Row 1: The big stats
-    markup.row(types.KeyboardButton('💰 Total'), types.KeyboardButton('🏆 Highest'))
-    
-    # Row 2: History & Analysis
-    markup.row(types.KeyboardButton('📜 History'), types.KeyboardButton('🧠 Analyze'))
-    
-    # Row 3: Help
-    markup.row(types.KeyboardButton('❓ Help'))
-    
+    # We removed 'is_persistent' because older Telegram clients glitch with it.
+    # Instead, we just re-send it often.
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False)
+    markup.row('💰 Total', '🏆 Highest')
+    markup.row('📜 History', '🧠 Analyze')
+    markup.row('❓ Help')
     return markup
 
-# --- AI BRAIN (GROQ) ---
+# --- AI & DB HELPERS ---
 def ask_ai(prompt):
     try:
         chat_completion = groq_client.chat.completions.create(
@@ -46,7 +38,6 @@ def ask_ai(prompt):
     except Exception as e:
         return f"My brain hurts: {e}"
 
-# --- DATABASE HELPERS ---
 def run_query(endpoint, params=None):
     url = f"{SUPABASE_URL}/rest/v1/{endpoint}"
     headers = {
@@ -65,7 +56,6 @@ def save_expense(item, amount, category="Uncategorized"):
         "Prefer": "return=minimal"
     }
     
-    # AI Categorization
     if category == "Uncategorized":
         ai_cat = ask_ai(f"Categorize this expense item into one word (e.g., Food, Transport, Tech). Output ONLY the word: '{item}'")
         if ai_cat:
@@ -75,49 +65,71 @@ def save_expense(item, amount, category="Uncategorized"):
     requests.post(url, json=payload, headers=headers)
     return category
 
-# --- HANDLERS ---
+# --- COMMAND HANDLERS ---
 
-@bot.message_handler(commands=['start', 'help'])
+@bot.message_handler(commands=['start'])
 def send_welcome(message):
+    welcome_text = (
+        "🤖 **ContabilBOT Online**\n\n"
+        "I am ready to judge your spending.\n"
+        "Type `50 Pizza` to track an expense.\n"
+        "Or use the buttons below 👇"
+    )
+    # forcing send_message instead of reply_to can sometimes help UI glitches
+    bot.send_message(message.chat.id, welcome_text, parse_mode="Markdown", reply_markup=get_main_menu())
+
+@bot.message_handler(commands=['help', 'commands'])
+def send_help(message):
     help_text = """
-    🤖 **ContabilBOT Command Guide**
+    📋 **Command Cheat Sheet**
     
-    **1. How to add an expense:**
-    Just type the amount and the item.
-    • `50 Pizza`
-    • `120 Taxi to airport`
-    • `15.50 Coffee`
+    **Manual Commands:**
+    • `/total` - See total spending
+    • `/highest` - Your most expensive mistake
+    • `/history` - Last 5 items
+    • `/analyze` - AI Financial Therapy
     
-    **2. The Buttons:**
-    Use the menu below to check your stats.
-    
-    **3. Analysis:**
-    Tap '🧠 Analyze' to get a roast of your spending habits.
+    **How to Track:**
+    Simply type the amount followed by the item name:
+    • `200 Groceries`
+    • `50 Taxi`
     """
-    bot.reply_to(message, help_text, parse_mode="Markdown", reply_markup=get_main_menu())
+    bot.send_message(message.chat.id, help_text, parse_mode="Markdown", reply_markup=get_main_menu())
 
-# --- BUTTON HANDLERS (Matching Text) ---
+@bot.message_handler(func=lambda m: m.text == '❓ Help')
+def help_btn(message):
+    send_help(message)
 
-@bot.message_handler(func=lambda m: m.text == '💰 Total')
+# --- STATS HANDLERS ---
+
+@bot.message_handler(commands=['total'])
 def show_total(message):
     res = run_query("expenses?select=amount")
     if res.status_code == 200:
         data = res.json()
         total = sum([float(x['amount']) for x in data])
-        bot.reply_to(message, f"💰 **Total Spent:** {total:,.2f} MDL", parse_mode="Markdown")
+        bot.reply_to(message, f"💰 **Total Spent:** {total:,.2f} MDL", reply_markup=get_main_menu())
     else:
         bot.reply_to(message, "❌ Database error.")
 
-@bot.message_handler(func=lambda m: m.text == '🏆 Highest')
+@bot.message_handler(func=lambda m: m.text == '💰 Total')
+def total_btn(message):
+    show_total(message)
+
+@bot.message_handler(commands=['highest'])
 def show_highest(message):
     res = run_query("expenses?select=item,amount&order=amount.desc&limit=1")
     if res.status_code == 200 and len(res.json()) > 0:
         top = res.json()[0]
-        bot.reply_to(message, f"🏆 **Highest Expense:**\n{top['amount']} on *{top['item']}*", parse_mode="Markdown")
+        bot.reply_to(message, f"🏆 **Highest Expense:**\n{top['amount']} on {top['item']}", reply_markup=get_main_menu())
     else:
         bot.reply_to(message, "No expenses found.")
 
-@bot.message_handler(func=lambda m: m.text == '📜 History')
+@bot.message_handler(func=lambda m: m.text == '🏆 Highest')
+def highest_btn(message):
+    show_highest(message)
+
+@bot.message_handler(commands=['history'])
 def show_history(message):
     res = run_query("expenses?select=item,amount,category,created_at&order=created_at.desc&limit=5")
     if res.status_code == 200:
@@ -127,10 +139,14 @@ def show_history(message):
             date_obj = datetime.fromisoformat(ex['created_at'].replace('Z', '+00:00'))
             date_str = date_obj.strftime("%d/%m")
             text += f"`{date_str}`: {ex['amount']} - {ex['item']} ({ex['category']})\n"
-        bot.reply_to(message, text, parse_mode="Markdown")
+        bot.reply_to(message, text, parse_mode="Markdown", reply_markup=get_main_menu())
 
-@bot.message_handler(func=lambda m: m.text == '🧠 Analyze')
-def analyze_finances(message):
+@bot.message_handler(func=lambda m: m.text == '📜 History')
+def history_btn(message):
+    show_history(message)
+
+@bot.message_handler(commands=['analyze'])
+def run_analysis(message):
     bot.send_chat_action(message.chat.id, 'typing')
     res = run_query("expenses?select=item,amount,category&order=created_at.desc&limit=20")
     data = res.json()
@@ -143,13 +159,13 @@ def analyze_finances(message):
     prompt = f"Here are my last 20 expenses:\n{expense_list}\nAct as a rude, sarcastic financial advisor. Summarize habits, point out the stupidest purchase, and give harsh advice. Keep it under 100 words."
     
     analysis = ask_ai(prompt)
-    bot.reply_to(message, f"🧠 **The Verdict:**\n\n{analysis}", parse_mode="Markdown")
+    bot.reply_to(message, f"🧠 **The Verdict:**\n\n{analysis}", parse_mode="Markdown", reply_markup=get_main_menu())
 
-@bot.message_handler(func=lambda m: m.text == '❓ Help')
-def help_btn(message):
-    send_welcome(message)
+@bot.message_handler(func=lambda m: m.text == '🧠 Analyze')
+def analyze_btn(message):
+    run_analysis(message)
 
-# --- EXPENSE LISTENER (Catches everything else) ---
+# --- MAIN LISTENER ---
 @bot.message_handler(func=lambda message: True)
 def handle_expense(message):
     try:
@@ -157,14 +173,13 @@ def handle_expense(message):
         parts = text.split()
         
         if len(parts) < 2:
-            return # Ignore random chat
+            return 
             
         amount = float(parts[0])
         item = ' '.join(parts[1:])
         
         category = save_expense(item, amount)
         
-        # Confirm with the menu visible
         bot.reply_to(message, f"💸 Saved: {amount} for {item}.\n📂 Category: {category}", reply_markup=get_main_menu())
 
     except ValueError:

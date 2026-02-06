@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ContabilBOT Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { background-color: #111827; color: #f3f4f6; }
+        .card { background-color: #1f2937; border-radius: 12px; padding: 1.5rem; }
+        .stat-value { font-size: 2rem; font-weight: 700; }
+        input { background-color: #374151; border: 1px solid #4b5563; color: white; padding: 0.75rem; border-radius: 0.5rem; width: 100%; }
+        input:focus { outline: none; border-color: #3b82f6; }
+        button { background-color: #3b82f6; color: white; padding: 0.75rem 1.5rem; border-radius: 0.5rem; font-weight: 600; transition: 0.2s; cursor: pointer; border: none; }
+        button:hover { background-color: #2563eb; }
+        .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); align-items: center; justify-content: center; }
+        .modal.active { display: flex; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #374151; }
+        th { color: #9ca3af; font-weight: 600; }
+    </style>
+</head>
+<body class="min-h-screen">
+    <div id="loginModal" class="modal active">
+        <div class="card max-w-sm mx-4 w-full">
+            <h2 class="text-2xl font-bold mb-2 text-center">🔐 ContabilBOT</h2>
+            <p class="text-gray-400 mb-6 text-center text-sm">Enter your dashboard password</p>
+            <input type="password" id="password" placeholder="Password" class="mb-4">
+            <button onclick="login()" class="w-full">Access Dashboard</button>
+            <p id="errorMsg" class="text-red-400 mt-4 text-center text-sm hidden">Invalid password</p>
+        </div>
+    </div>
+
+    <div id="dashboard" class="hidden p-4 md:p-8 max-w-6xl mx-auto">
+        <header class="flex justify-between items-center mb-8">
+            <div>
+                <h1 class="text-3xl font-bold">💰 Dashboard</h1>
+                <p class="text-gray-400">Your financial overview</p>
+            </div>
+            <button onclick="logout()" class="bg-red-600 hover:bg-red-700 px-4 py-2 text-sm">Logout</button>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            <div class="card">
+                <p class="text-gray-400 text-sm">Total Spent (This Month)</p>
+                <p class="stat-value text-red-400" id="totalSpent">-</p>
+            </div>
+            <div class="card">
+                <p class="text-gray-400 text-sm">Monthly Budget</p>
+                <p class="stat-value text-blue-400" id="budget">-</p>
+            </div>
+            <div class="card">
+                <p class="text-gray-400 text-sm">Remaining</p>
+                <p class="stat-value text-green-400" id="remaining">-</p>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
+            <div class="card">
+                <h3 class="text-lg font-bold mb-4">📊 Spending by Category</h3>
+                <div class="h-64">
+                    <canvas id="catChart"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <h3 class="text-lg font-bold mb-4">🎯 AI Insights</h3>
+                <p id="insights" class="text-gray-300 italic">Loading...</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3 class="text-lg font-bold mb-4">📜 Recent Expenses</h3>
+            <div class="overflow-x-auto">
+                <table id="expenseTable">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Item</th>
+                            <th>Category</th>
+                            <th>Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <h3 class="text-lg font-bold mb-4">⚙️ Settings</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Budget (MDL)</label>
+                    <input type="number" id="budgetInput" placeholder="5000">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Goal</label>
+                    <input type="text" id="goalInput" placeholder="Save money">
+                </div>
+            </div>
+            <button onclick="saveSettings()" class="mt-4">Save Settings</button>
+        </div>
+    </div>
+
+    <script>
+        const API = '/api';
+        let catChart = null;
+
+        function login() {
+            const pwd = document.getElementById('password').value;
+            localStorage.setItem('dash_pwd', pwd);
+            loadDashboard();
+        }
+
+        function logout() {
+            localStorage.removeItem('dash_pwd');
+            location.reload();
+        }
+
+        function getHeaders() {
+            return {
+                'X-Dashboard-Password': localStorage.getItem('dash_pwd') || '',
+                'Content-Type': 'application/json'
+            };
+        }
+
+        async function loadDashboard() {
+            try {
+                const res = await fetch(`${API}/stats`, { headers: getHeaders() });
+                if (!res.ok) {
+                    if (res.status === 401) {
+                        document.getElementById('errorMsg').classList.remove('hidden');
+                        return;
+                    }
+                    throw new Error('Failed');
+                }
+
+                document.getElementById('loginModal').classList.remove('active');
+                document.getElementById('dashboard').classList.remove('hidden');
+
+                const data = await res.json();
+                renderDashboard(data);
+            } catch (e) {
+                document.getElementById('errorMsg').classList.remove('hidden');
+            }
+        }
+
+        function renderDashboard(data) {
+            document.getElementById('totalSpent').textContent = data.total?.toLocaleString() || '0';
+            document.getElementById('budget').textContent = data.budget?.toLocaleString() || '0';
+
+            const rem = data.remaining || 0;
+            const remEl = document.getElementById('remaining');
+            remEl.textContent = rem.toLocaleString();
+            remEl.className = 'stat-value ' + (rem >= 0 ? 'text-green-400' : 'text-red-400');
+
+            document.getElementById('budgetInput').value = data.budget || '';
+            document.getElementById('goalInput').value = data.goals || 'Save money';
+
+            renderCategoryChart(data.categories || {});
+            renderExpenses(data.history || []);
+            document.getElementById('insights').textContent = `Goal: ${data.goals || 'Save money'}`;
+        }
+
+        function renderCategoryChart(cats) {
+            const ctx = document.getElementById('catChart').getContext('2d');
+            const labels = Object.keys(cats);
+            const values = Object.values(cats);
+            const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#8b5cf6', '#6b7280'];
+
+            if (catChart) catChart.destroy();
+            catChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels.length ? labels : ['No Data'],
+                    datasets: [{
+                        data: values.length ? values : [1],
+                        backgroundColor: colors,
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'right', labels: { color: '#f3f4f6' } }
+                    }
+                }
+            });
+        }
+
+        function renderExpenses(history) {
+            const tbody = document.querySelector('#expenseTable tbody');
+            tbody.innerHTML = history.map(e => `
+                <tr>
+                    <td>${e.date || '-'}</td>
+                    <td>${e.item || '-'}</td>
+                    <td><span class="bg-gray-700 px-2 py-1 rounded text-xs">${e.category || 'Misc'}</span></td>
+                    <td class="text-red-400">${e.amount?.toLocaleString() || 0}</td>
+                </tr>
+            `).join('');
+        }
+
+        async function saveSettings() {
+            const budget = document.getElementById('budgetInput').value;
+            const goals = document.getElementById('goalInput').value;
+            await fetch(`${API}/profile`, {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify({ budget, goals })
+            });
+            await loadDashboard();
+        }
+
+        const savedPwd = localStorage.getItem('dash_pwd');
+        if (savedPwd) {
+            document.getElementById('password').value = savedPwd;
+            loadDashboard();
+        }
+    </script>
+</body>
+</html>

@@ -42,8 +42,16 @@ DASHBOARD_HTML = """
     <style>
         body { background-color: #0f172a; color: #e2e8f0; }
         .card { background-color: #1e293b; border-radius: 16px; padding: 1.5rem; }
-        .chat-widget { position: fixed; bottom-4 right-4; z-index: 50; }
-        .chat-window { display: none; position: fixed; bottom-20 right-4; width: 380px; height: 520px; background: #1e293b; border-radius: 16px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6); flex-direction: column; overflow: hidden; border: 1px solid #334155; }
+        .chat-widget { position: fixed; bottom-6 right-6; z-index: 99999; }
+        .chat-widget > button { 
+            background: linear-gradient(135deg, #22c55e 0%, #10b981 100%); 
+            box-shadow: 0 4px 15px rgba(34, 197, 94, 0.4); 
+        }
+        .chat-widget > button:hover { 
+            transform: scale(1.05); 
+            box-shadow: 0 6px 20px rgba(34, 197, 94, 0.5); 
+        }
+        .chat-window { display: none; position: fixed; bottom-24 right-6; width: 380px; height: 520px; background: #1e293b; border-radius: 16px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8); flex-direction: column; overflow: hidden; border: 1px solid #334155; z-index: 99999; }
         .chat-messages { flex: 1; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
         .chat-input { background: #0f172a; border-top: 1px solid #334155; padding: 0.75rem; }
         .chat-message { max-width: 85%; padding: 0.75rem 1rem; border-radius: 12px; font-size: 0.875rem; line-height: 1.4; }

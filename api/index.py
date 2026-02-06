@@ -29,338 +29,23 @@ CATEGORIES = [
     "Misc",
 ]
 
-# === EMBEDDED DASHBOARD HTML ===
-DASHBOARD_HTML = """
-<!DOCTYPE html>
-<html lang="en" class="dark">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ContabilBOT CFO Dashboard</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        body { background-color: #0f172a; color: #e2e8f0; }
-        .card { background-color: #1e293b; border-radius: 16px; padding: 1.5rem; }
-        .chat-widget { position: fixed; bottom-6 right-6; z-index: 99999; }
-        .chat-widget > button { 
-            background: linear-gradient(135deg, #22c55e 0%, #10b981 100%); 
-            box-shadow: 0 4px 15px rgba(34, 197, 94, 0.4); 
-        }
-        .chat-widget > button:hover { 
-            transform: scale(1.05); 
-            box-shadow: 0 6px 20px rgba(34, 197, 94, 0.5); 
-        }
-        .chat-window { display: none; position: fixed; bottom-24 right-6; width: 380px; height: 520px; background: #1e293b; border-radius: 16px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8); flex-direction: column; overflow: hidden; border: 1px solid #334155; z-index: 99999; }
-        .chat-messages { flex: 1; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
-        .chat-input { background: #0f172a; border-top: 1px solid #334155; padding: 0.75rem; }
-        .chat-message { max-width: 85%; padding: 0.75rem 1rem; border-radius: 12px; font-size: 0.875rem; line-height: 1.4; }
-        .chat-user { background: #2563eb; color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
-        .chat-assistant { background: #334155; color: #e2e8f0; align-self: flex-start; border-bottom-left-radius: 4px; }
-        .typing-indicator { display: flex; gap: 4px; padding: 0.75rem 1rem; background: #334155; border-radius: 12px; align-self: flex-start; width: fit-content; }
-        .typing-dot { width: 8px; height: 8px; background: #9ca3af; border-radius: 50%; animation: typing 1.4s infinite; }
-        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
-        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
-        @keyframes typing { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-4px); } }
-    </style>
-</head>
-<body class="min-h-screen">
-    <div id="loginModal" class="fixed inset-0 bg-black/90 flex items-center justify-center z-50">
-        <div class="card max-w-sm mx-4 w-full text-center">
-            <div class="mb-4 text-4xl">🔐</div>
-            <h2 class="text-2xl font-bold mb-2 text-green-400">ContabilBOT CFO</h2>
-            <p class="text-gray-400 mb-6 text-sm">Enter your dashboard password</p>
-            <input type="password" id="password" placeholder="Password" 
-                   class="w-full bg-gray-700 border border-gray-600 text-white px-4 py-3 rounded-lg mb-4 focus:outline-none focus:ring-2 focus:ring-green-500"
-                   onkeypress="if(event.key==='Enter')login()">
-            <button onclick="login()" class="w-full bg-green-500 hover:bg-green-600 text-black font-bold py-3 rounded-lg transition">
-                Unlock Dashboard
-            </button>
-            <p id="errorMsg" class="text-red-400 mt-4 text-sm hidden">Invalid password. Try again.</p>
-        </div>
-    </div>
 
-    <div id="dashboard" class="hidden p-4 md:p-6 max-w-7xl mx-auto">
-        <header class="flex justify-between items-center mb-8">
-            <div>
-                <h1 class="text-3xl font-bold text-green-400">💰 Financial Command Center</h1>
-                <p class="text-gray-400 text-sm">v5.0 - Agentic CFO</p>
-            </div>
-            <div class="flex items-center gap-4">
-                <span class="text-xs text-gray-500">Powered by Groq</span>
-                <button onclick="logout()" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg text-sm font-medium transition">Logout</button>
-            </div>
-        </header>
+# === RESPONSE SANITIZER ===
+def sanitize_response(text):
+    """Strip any raw function tags or XML-like function calls from response"""
+    if not text:
+        return ""
+    import re
 
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-            <div class="card">
-                <p class="text-gray-400 text-xs uppercase tracking-wider">Income (Month)</p>
-                <p class="text-2xl md:text-3xl font-bold text-green-400 mt-1" id="incomeTotal">-</p>
-            </div>
-            <div class="card">
-                <p class="text-gray-400 text-xs uppercase tracking-wider">Expenses (Month)</p>
-                <p class="text-2xl md:text-3xl font-bold text-red-400 mt-1" id="expenseTotal">-</p>
-            </div>
-            <div class="card">
-                <p class="text-gray-400 text-xs uppercase tracking-wider">Net Savings</p>
-                <p class="text-2xl md:text-3xl font-bold mt-1" id="netSavings">-</p>
-            </div>
-            <div class="card">
-                <p class="text-gray-400 text-xs uppercase tracking-wider">Monthly Budget</p>
-                <p class="text-2xl md:text-3xl font-bold text-blue-400 mt-1" id="budgetDisplay">-</p>
-            </div>
-        </div>
-
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
-            <div class="card">
-                <h3 class="text-lg font-bold mb-4 flex items-center gap-2"><span>📊</span> Spending by Category</h3>
-                <div class="h-64"><canvas id="catChart"></canvas></div>
-            </div>
-            <div class="card">
-                <h3 class="text-lg font-bold mb-4 flex items-center gap-2"><span>📈</span> Income vs Expenses</h3>
-                <div class="h-64"><canvas id="incomeChart"></canvas></div>
-            </div>
-        </div>
-
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
-            <div class="card">
-                <h3 class="text-lg font-bold mb-4 flex items-center gap-2"><span>🔄</span> Subscriptions <span class="text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded" id="subBadge">0</span></h3>
-                <div id="subscriptionsList" class="space-y-2 max-h-48 overflow-y-auto"><p class="text-gray-500 text-sm">Loading...</p></div>
-            </div>
-            <div class="card">
-                <h3 class="text-lg font-bold mb-4 flex items-center gap-2"><span>🎯</span> Savings Goals</h3>
-                <div id="goalsList" class="space-y-3 max-h-48 overflow-y-auto"><p class="text-gray-500 text-sm">Loading...</p></div>
-            </div>
-        </div>
-
-        <div class="card">
-            <h3 class="text-lg font-bold mb-4 flex items-center gap-2"><span>📜</span> Recent Transactions</h3>
-            <div class="overflow-x-auto">
-                <table class="w-full">
-                    <thead><tr class="text-left text-gray-400 border-b border-gray-700"><th class="pb-3 pr-4 text-sm">Date</th><th class="pb-3 pr-4 text-sm">Item</th><th class="pb-3 pr-4 text-sm">Category</th><th class="pb-3 text-right text-sm">Amount</th></tr></thead>
-                    <tbody id="transactionsTable" class="text-sm"><tr><td colspan="4" class="py-4 text-center text-gray-500">Loading...</td></tr></tbody>
-                </table>
-            </div>
-        </div>
-
-        <div class="card mt-4">
-            <h3 class="text-lg font-bold mb-2">🎯 User Goals</h3>
-            <p id="userGoals" class="text-gray-300">Loading...</p>
-        </div>
-    </div>
-
-    <div class="chat-widget">
-        <button onclick="toggleChat()" class="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 rounded-full p-4 shadow-lg transition transform hover:scale-105">
-            <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
-            </svg>
-        </button>
-        <div id="chatWindow" class="chat-window">
-            <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-800">
-                <div class="flex items-center gap-2"><span class="text-xl">🤖</span><h3 class="font-bold">CFO Chat</h3></div>
-                <button onclick="toggleChat()" class="text-gray-400 hover:text-white transition">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                </button>
-            </div>
-            <div id="chatMessages" class="chat-messages">
-                <div class="chat-message chat-assistant">
-                    <p class="font-semibold mb-1">🤖 ContabilBOT CFO</p>
-                    <p>Hey! I'm your Agentic CFO. Ask me anything about your finances:</p>
-                    <ul class="mt-2 space-y-1 text-xs opacity-75">
-                        <li>• "How much did I spend on food this month?"</li>
-                        <li>• "Log 50 for coffee"</li>
-                        <li>• "What's my net savings?"</li>
-                        <li>• "Show my subscriptions"</li>
-                    </ul>
-                </div>
-            </div>
-            <div class="chat-input">
-                <input type="text" id="chatInput" placeholder="Ask about your finances..." 
-                       class="w-full bg-gray-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                       onkeypress="if(event.key==='Enter')sendChatMessage()">
-            </div>
-        </div>
-    </div>
-
-    <script>
-        const API = '/api';
-        let catChart = null;
-        let incomeChart = null;
-        let chatHistory = [];
-
-        function getHeaders() { return { 'X-Dashboard-Password': localStorage.getItem('dash_pwd') || '', 'Content-Type': 'application/json' }; }
-
-        function toggleChat() {
-            const w = document.getElementById('chatWindow');
-            const isHidden = w.style.display === 'none' || w.style.display === '';
-            w.style.display = isHidden ? 'flex' : 'none';
-            if (isHidden) document.getElementById('chatInput').focus();
-        }
-
-        function addMessage(role, text) {
-            const m = document.getElementById('chatMessages');
-            const div = document.createElement('div');
-            div.className = 'chat-message ' + (role === 'user' ? 'chat-user' : 'chat-assistant');
-            div.innerHTML = role === 'assistant' ? '<p class="font-semibold mb-1">🤖 ContabilBOT</p><p>' + text + '</p>' : '<p>' + text + '</p>';
-            m.appendChild(div);
-            m.scrollTop = m.scrollHeight;
-            chatHistory.push({ role, content: text });
-            if (chatHistory.length > 10) chatHistory.shift();
-        }
-
-        function showTyping() {
-            const m = document.getElementById('chatMessages');
-            const div = document.createElement('div');
-            div.id = 'typingIndicator';
-            div.className = 'typing-indicator';
-            div.innerHTML = '<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>';
-            m.appendChild(div);
-            m.scrollTop = m.scrollHeight;
-        }
-
-        function hideTyping() { const typing = document.getElementById('typingIndicator'); if (typing) typing.remove(); }
-
-        async function sendChatMessage() {
-            const input = document.getElementById('chatInput');
-            const msg = input.value.trim();
-            if (!msg) return;
-            addMessage('user', msg);
-            input.value = '';
-            showTyping();
-            try {
-                const res = await fetch(API + '/chat', { method: 'POST', headers: getHeaders(), body: JSON.stringify({ message: msg, history: chatHistory }) });
-                hideTyping();
-                if (res.status === 401) { addMessage('assistant', '❌ Unauthorized. Please reload and enter the correct password.'); return; }
-                if (!res.ok) { addMessage('assistant', '❌ Error: Could not connect to the CFO agent.'); return; }
-                const data = await res.json();
-                addMessage('assistant', data.response || 'No response received.');
-            } catch (e) { hideTyping(); addMessage('assistant', '❌ Connection error: ' + e.message); }
-        }
-
-        function login() {
-            const pwd = document.getElementById('password').value;
-            if (!pwd) return;
-            localStorage.setItem('dash_pwd', pwd);
-            loadDashboard();
-        }
-
-        function logout() { localStorage.removeItem('dash_pwd'); chatHistory = []; location.reload(); }
-
-        async function loadDashboard() {
-            try {
-                const res = await fetch(API + '/stats', { headers: getHeaders() });
-                if (res.status === 401) { document.getElementById('errorMsg').classList.remove('hidden'); document.getElementById('password').value = ''; return; }
-                if (!res.ok) { alert('Failed to load dashboard data'); return; }
-                document.getElementById('loginModal').classList.add('hidden');
-                document.getElementById('dashboard').classList.remove('hidden');
-                renderDashboard(await res.json());
-            } catch (e) { console.error('Dashboard load error:', e); alert('Failed to connect.'); }
-        }
-
-        function renderDashboard(data) {
-            document.getElementById('incomeTotal').textContent = (data.income || 0).toLocaleString();
-            document.getElementById('expenseTotal').textContent = (data.expenses || 0).toLocaleString();
-            document.getElementById('netSavings').textContent = (data.net || 0).toLocaleString();
-            document.getElementById('netSavings').className = 'text-2xl md:text-3xl font-bold mt-1 ' + ((data.net || 0) >= 0 ? 'text-green-400' : 'text-red-400');
-            document.getElementById('budgetDisplay').textContent = (data.budget || 0).toLocaleString();
-            document.getElementById('userGoals').textContent = data.goals || 'Save money';
-            renderCatChart(data.categories || {});
-            renderIncomeChart(data.income || 0, data.expenses || 0);
-            renderTransactions(data.history || []);
-            renderSubscriptions(data.subscriptions || []);
-            renderGoals(data.savings_goals || []);
-        }
-
-        function renderCatChart(cats) {
-            const ctx = document.getElementById('catChart').getContext('2d');
-            if (catChart) catChart.destroy();
-            const labels = Object.keys(cats);
-            const values = Object.values(cats);
-            if (labels.length === 0) { labels.push('No Data'); values.push(1); }
-            catChart = new Chart(ctx, { type: 'doughnut', data: { labels: labels, datasets: [{ data: values, backgroundColor: ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#8b5cf6', '#6b7280'].slice(0, labels.length), borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#9ca3af', padding: 10 } } } } });
-        }
-
-        function renderIncomeChart(income, expenses) {
-            const ctx = document.getElementById('incomeChart').getContext('2d');
-            if (incomeChart) incomeChart.destroy();
-            incomeChart = new Chart(ctx, { type: 'bar', data: { labels: ['Income', 'Expenses'], datasets: [{ data: [income, expenses], backgroundColor: ['#22c55e', '#ef4444'], borderRadius: 8 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { color: '#9ca3af' }, grid: { color: '#334155' } }, x: { ticks: { color: '#9ca3af' }, grid: { display: false } } } } });
-        }
-
-        function renderTransactions(history) {
-            const tbody = document.getElementById('transactionsTable');
-            if (!history || history.length === 0) { tbody.innerHTML = '<tr><td colspan="4" class="py-4 text-center text-gray-500">No transactions yet</td></tr>'; return; }
-            tbody.innerHTML = history.map(e => '<tr class="border-b border-gray-700 hover:bg-gray-800/50 transition"><td class="py-3 pr-4 text-gray-400">' + (e.date || '-') + '</td><td class="py-3 pr-4">' + (e.item || '-') + '</td><td class="py-3 pr-4"><span class="bg-gray-700 px-2 py-0.5 rounded text-xs">' + (e.category || 'Misc') + '</span></td><td class="py-3 text-right text-red-400 font-medium">' + (e.amount || 0).toLocaleString() + '</td></tr>').join('');
-        }
-
-        function renderSubscriptions(subs) {
-            const container = document.getElementById('subscriptionsList');
-            document.getElementById('subBadge').textContent = subs.length;
-            if (!subs || subs.length === 0) { container.innerHTML = '<p class="text-gray-500 text-sm">No active subscriptions</p>'; return; }
-            container.innerHTML = subs.map(s => '<div class="flex justify-between items-center bg-gray-800 p-3 rounded-lg"><div class="flex items-center gap-3"><span class="text-lg">🔄</span><div><p class="font-medium text-sm">' + s.name + '</p><p class="text-xs text-gray-500">' + s.billing_cycle + '</p></div></div><span class="text-red-400 font-medium">-' + s.amount.toLocaleString() + '</span></div>').join('');
-        }
-
-        function renderGoals(goals) {
-            const container = document.getElementById('goalsList');
-            if (!goals || goals.length === 0) { container.innerHTML = '<p class="text-gray-500 text-sm">No savings goals set</p>'; return; }
-            container.innerHTML = goals.map(g => { var target = g.target_amount || 1; var current = g.current_amount || 0; var pct = Math.min(100, (current / target) * 100); var remaining = target - current; return '<div class="bg-gray-800 p-3 rounded-lg"><div class="flex justify-between items-center mb-2"><span class="font-medium text-sm">' + g.name + '</span><span class="text-xs text-gray-400">' + current.toLocaleString() + ' / ' + target.toLocaleString() + '</span></div><div class="w-full bg-gray-700 rounded-full h-2 mb-1"><div class="bg-gradient-to-r from-blue-500 to-blue-400 h-2 rounded-full transition-all" style="width: ' + pct + '%"></div></div><p class="text-xs text-gray-500">' + (remaining > 0 ? remaining.toLocaleString() + ' remaining' : 'Goal reached! 🎉') + '</p></div>'; }).join('');
-        }
-
-        if (localStorage.getItem('dash_pwd')) { document.getElementById('password').value = localStorage.getItem('dash_pwd'); loadDashboard(); }
-    </script>
-</body>
-</html>
-"""
-
-
-# --- SUPABASE HELPER (Now supports all methods) ---
-def supabase_request(endpoint, method="GET", json_body=None, params=None):
-    url = f"{SUPABASE_URL}/rest/v1/{endpoint}"
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json",
-        "Prefer": "return=minimal",
-    }
-    try:
-        if method == "GET":
-            return requests.get(url, headers=headers, params=params)
-        elif method == "POST":
-            return requests.post(url, headers=headers, json=json_body, params=params)
-        elif method == "PATCH":
-            return requests.patch(url, headers=headers, json=json_body, params=params)
-        elif method == "DELETE":
-            return requests.delete(url, headers=headers, params=params)
-    except Exception as e:
-        print(f"Supabase error: {e}")
-        return None
-
-
-# --- CATEGORIZATION ---
-def strict_categorization(item_text):
-    """Use AI to categorize expense, fallback to 'Misc'"""
-    if not GROQ_API_KEY:
-        return "Misc"
-
-    categories_str = ", ".join(CATEGORIES)
-    prompt = f"""Categorize this expense into EXACTLY ONE of these categories: {categories_str}.
-Output ONLY the category name, nothing else.
-Expense: "{item_text}"
-Category:"""
-
-    try:
-        response = groq_client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
-            model="llama-3.3-70b-versatile",
-            temperature=0.3,
-        )
-        result = response.choices[0].message.content.strip()
-        for cat in CATEGORIES:
-            if cat.lower() in result.lower():
-                return cat
-        return "Misc"
-    except Exception as e:
-        print(f"Categorization error: {e}")
-        return "Misc"
+    # Strip <function=...> patterns
+    text = re.sub(r"<function=[^>]*>", "", text)
+    # Strip </function> tags
+    text = re.sub(r"</function>", "", text)
+    # Strip any remaining function call artifacts
+    text = re.sub(r"\\[function:[^\\]*\\]", "", text)
+    # Clean up extra whitespace
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
 
 # === TOOL DEFINITIONS (Native Groq Schema) ===
@@ -407,25 +92,30 @@ TOOLS = [
                     "table": {
                         "type": "string",
                         "enum": ["expenses", "income", "subscriptions"],
+                        "description": "Which table to query (required)",
                     },
                     "filter_item": {
                         "type": "string",
                         "description": "Partial match on item name (e.g., 'Uber')",
                     },
-                    "category": {"type": "string", "description": "Filter by category"},
+                    "category": {
+                        "type": "string",
+                        "description": "Filter by exact category name",
+                    },
                     "start_date": {
                         "type": "string",
-                        "description": "ISO date (e.g., '2024-01-01')",
+                        "description": "ISO date YYYY-MM-DD (e.g., 2024-01-01)",
                     },
                     "end_date": {
                         "type": "string",
-                        "description": "ISO date (e.g., '2024-01-31')",
+                        "description": "ISO date YYYY-MM-DD (e.g., 2024-12-31)",
                     },
                     "limit": {
                         "type": "integer",
-                        "description": "Max results (default 10)",
+                        "description": "Max results to return (default 10)",
                     },
                 },
+                "required": ["table"],
             },
         },
     },
@@ -437,8 +127,15 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "action": {"type": "string", "enum": ["add", "update", "cancel"]},
-                    "name": {"type": "string", "description": "Subscription name"},
+                    "action": {
+                        "type": "string",
+                        "enum": ["add", "update", "cancel"],
+                        "description": "Action to perform",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Subscription name (required)",
+                    },
                     "amount": {"type": "number", "description": "Monthly amount"},
                     "billing_cycle": {
                         "type": "string",
@@ -468,7 +165,8 @@ TOOLS = [
                             "this_year",
                             "all_time",
                         ],
-                    }
+                        "description": "Time period to summarize (required)",
+                    },
                 },
                 "required": ["period"],
             },
@@ -484,15 +182,16 @@ TOOLS = [
                 "properties": {
                     "goal_name": {
                         "type": "string",
-                        "description": "Name of savings goal",
+                        "description": "Name of savings goal (required)",
                     },
                     "amount": {
                         "type": "number",
-                        "description": "Amount to add to savings",
+                        "description": "Amount to add or set",
                     },
                     "action": {
                         "type": "string",
                         "enum": ["add", "set_target", "create"],
+                        "description": "Action type",
                     },
                 },
                 "required": ["goal_name"],
@@ -741,7 +440,10 @@ def tool_get_summary(period="this_month"):
 def agent_process_message(
     user_message: str, user_id: int = 1, chat_history: list = None
 ):
-    """Main agent loop with native tool calling"""
+    """Main agent loop with native tool calling - ATOMIC EXECUTION"""
+
+    # Hardcoded date to prevent hallucinations
+    CURRENT_DATE = "2026-02-06"
 
     # Fetch user profile
     profile_resp = supabase_request(f"financial_profile?user_id=eq.{user_id}")
@@ -757,7 +459,7 @@ def agent_process_message(
     )
     history = history_resp.json()[::-1] if history_resp and history_resp.json() else []
 
-    # Build system prompt
+    # Build system prompt with hardcoded date
     system_prompt = f"""You are ContabilBOT, a witty, sarcastic, but highly competent AI CFO.
 
 Your personality:
@@ -771,14 +473,16 @@ Your capabilities:
 - Always extract specific numbers (amounts, dates) from user queries
 - For expense tracking, infer category if not provided
 - For analytics questions, provide specific numbers and comparisons
+- IMPORTANT: When user asks about time periods, use ISO dates YYYY-MM-DD format
 
 Current User Profile:
 - Budget: {profile.get("budget", 5000)} MDL
 - Goals: {profile.get("goals", "Save money")}
 
-Current date: {datetime.now().strftime("%Y-%m-%d")}
+Today's Date: {CURRENT_DATE}
 
-Remember: Call the appropriate tool BEFORE responding to get real data. Never make up numbers."""
+CRITICAL RULE: If you need to call a tool, do NOT respond to the user yet. Call the tool, wait for the result, then provide your final witty response.
+NEVER include function call syntax or XML tags in your final response."""
 
     messages = [{"role": "system", "content": system_prompt}]
 
@@ -803,10 +507,13 @@ Remember: Call the appropriate tool BEFORE responding to get real data. Never ma
 
     response_message = response.choices[0].message
     tool_calls = response_message.tool_calls
-    tool_results = []
 
-    # Execute tool calls
+    # If tool calls exist, we MUST execute them and do second LLM pass (ATOMIC)
     if tool_calls:
+        # Ignore any content in response_message - we don't want leaks
+        tool_results = []
+
+        # Execute all tool calls
         for call in tool_calls:
             func_name = call.function.name
             func_args = json.loads(call.function.arguments)
@@ -818,10 +525,12 @@ Remember: Call the appropriate tool BEFORE responding to get real data. Never ma
                     result = func(**func_args)
                 except Exception as e:
                     result = {"success": False, "error": str(e)}
+            else:
+                result = {"success": False, "error": f"Unknown function: {func_name}"}
 
-                tool_results.append(
-                    {"tool": func_name, "arguments": func_args, "result": result}
-                )
+            tool_results.append(
+                {"tool": func_name, "arguments": func_args, "result": result}
+            )
 
         # Save user message to history
         supabase_request(
@@ -830,8 +539,8 @@ Remember: Call the appropriate tool BEFORE responding to get real data. Never ma
             json_body={"user_id": user_id, "role": "user", "content": user_message},
         )
 
-        # Feed tool results back to LLM for final witty response
-        messages.append(response_message)
+        # Prepare messages for second pass - include tool results
+        messages.append(response_message)  # Add the assistant's tool call message
 
         for i, result in enumerate(tool_results):
             messages.append(
@@ -842,11 +551,16 @@ Remember: Call the appropriate tool BEFORE responding to get real data. Never ma
                 }
             )
 
+        # MANDATORY second LLM pass - generate final witty response
         try:
             final_response = groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile", messages=messages, temperature=0.8
+                model="llama-3.3-70b-versatile",
+                messages=messages,
+                temperature=0.8,
             )
-            final_content = final_response.choices[0].message.content
+            final_content = sanitize_response(
+                final_response.choices[0].message.content or ""
+            )
         except Exception as e:
             final_content = (
                 f"I got the data but my witty response generator failed: {str(e)}"
@@ -866,11 +580,12 @@ Remember: Call the appropriate tool BEFORE responding to get real data. Never ma
         )
 
         return final_content
+
     else:
-        # No tool calls needed
-        content = (
-            response_message.content or "I didn't understand that. Try rephrasing?"
-        )
+        # No tool calls needed - return sanitized direct response
+        content = sanitize_response(response_message.content)
+        if not content:
+            content = "I didn't understand that. Try rephrasing?"
 
         supabase_request(
             "chat_history",

@@ -19,14 +19,20 @@ bot = telebot.TeleBot(TOKEN, threaded=False)
 groq_client = Groq(api_key=GROQ_API_KEY)
 
 # --- KEYBOARD MENU ---
+# --- KEYBOARD MENU ---
 def get_main_menu():
-    markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    btn_total = types.KeyboardButton('💰 Total')
-    btn_highest = types.KeyboardButton('🏆 Highest')
-    btn_history = types.KeyboardButton('📜 History')
-    btn_analyze = types.KeyboardButton('🧠 Analyze')
-    btn_help = types.KeyboardButton('❓ Help')
-    markup.add(btn_total, btn_highest, btn_history, btn_analyze, btn_help)
+    # is_persistent=True keeps the menu open even after you click a button
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, is_persistent=True)
+    
+    # Row 1: The big stats
+    markup.row(types.KeyboardButton('💰 Total'), types.KeyboardButton('🏆 Highest'))
+    
+    # Row 2: History & Analysis
+    markup.row(types.KeyboardButton('📜 History'), types.KeyboardButton('🧠 Analyze'))
+    
+    # Row 3: Help
+    markup.row(types.KeyboardButton('❓ Help'))
+    
     return markup
 
 # --- AI BRAIN (GROQ) ---

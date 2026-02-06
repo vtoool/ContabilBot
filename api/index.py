@@ -4,17 +4,21 @@ import random
 from datetime import datetime
 from flask import Flask, request, jsonify
 import telebot
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from supabase import create_client, Client
 
 app = Flask(__name__)
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-SHEET_NAME = os.environ.get("SHEET_NAME", "Budget")
-GOOGLE_CREDS_JSON = os.environ.get("GOOGLE_CREDS_JSON")
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
 if TELEGRAM_TOKEN:
     bot = telebot.TeleBot(TELEGRAM_TOKEN)
+
+if SUPABASE_URL and SUPABASE_KEY:
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+else:
+    supabase = None
 
 INSULTS = [
     "Your wallet is crying. Loudly.",
@@ -35,35 +39,15 @@ INSULTS = [
 ]
 
 
-def get_gspread_client():
-    if not GOOGLE_CREDS_JSON:
-        return None
-    try:
-        creds_data = json.loads(GOOGLE_CREDS_JSON)
-        scope = [
-            "https://spreadsheets.google.com/feeds",
-            "https://www.googleapis.com/auth/drive",
-        ]
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_data, scope)
-        client = gspread.authorize(creds)
-        return client
-    except Exception as e:
-        print(f"Error creating gspread client: {e}")
-        return None
-
-
-def append_expense_to_sheet(item, amount):
-    client = get_gspread_client()
-    if not client:
+def insert_expense(item, amount):
+    if not supabase:
         return False
     try:
-        spreadsheet = client.open(SHEET_NAME)
-        worksheet = spreadsheet.get_worksheet(0)
-        date = datetime.now().strftime("%Y-%m-%d")
-        worksheet.append_row([date, item, amount, "Uncategorized"])
+        data = {"item": item, "amount": float(amount), "category": "Uncategorized"}
+        response = supabase.table("expenses").insert(data).execute()
         return True
     except Exception as e:
-        print(f"Error appending to sheet: {e}")
+        print(f"Supabase insert error: {e}")
         return False
 
 
@@ -77,11 +61,13 @@ def handle_message(message):
     try:
         amount = float(parts[0])
         item = " ".join(parts[1:])
-        if append_expense_to_sheet(item, amount):
+        if insert_expense(item, amount):
             insult = random.choice(INSULTS)
             bot.reply_to(message, f"Recorded: {amount} lei for {item}. {insult}")
         else:
-            bot.reply_to(message, "Failed to save expense. Check logs.")
+            bot.reply_to(
+                message, "Database error. Your spending wasn't tracked. Lucky you?"
+            )
     except ValueError:
         bot.reply_to(message, "Invalid amount. Use numbers only.\nExample: 50 Coffee")
 

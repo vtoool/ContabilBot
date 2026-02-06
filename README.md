@@ -1,15 +1,18 @@
 # ContabilBOT - Telegram Expense Tracker with Roast
 
-A serverless Telegram bot that tracks expenses in Google Sheets and roasts you for spending money.
+A serverless Telegram bot that tracks expenses in Supabase and roasts you for spending money.
 
 ## Setup
 
-### 1. Create Google Sheet
+### 1. Supabase Setup
 
-1. Create a new Google Spreadsheet named "Budget"
-2. Add headers in row 1: `Date | Item | Amount | Category`
-3. Create a service account in Google Cloud Console
-4. Share the sheet with the service account's email address
+1. Create a new Supabase project
+2. Create a table named `expenses` with columns:
+   - `id` (bigint, auto-generated)
+   - `item` (text)
+   - `amount` (numeric)
+   - `category` (text, default: 'Uncategorized')
+   - `created_at` (timestamp with timezone, auto-generated)
 
 ### 2. Environment Variables
 
@@ -18,8 +21,8 @@ Add these in Vercel Dashboard → Settings → Environment Variables:
 | Variable | Description |
 |----------|-------------|
 | `TELEGRAM_TOKEN` | Bot token from @BotFather |
-| `SHEET_NAME` | Name of Google Sheet (default: "Budget") |
-| `GOOGLE_CREDS_JSON` | Full JSON content of service account credentials |
+| `SUPABASE_URL` | Supabase project URL |
+| `SUPABASE_KEY` | Supabase anon/public key |
 
 ### 3. Telegram Webhook Setup
 
@@ -32,11 +35,6 @@ https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<YOUR-VERCEL-APP>.ver
 Replace:
 - `<TOKEN>` with your Telegram bot token
 - `<YOUR-VERCEL-APP>` with your Vercel deployment name
-
-Example:
-```
-https://api.telegram.org/bot123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11/setWebhook?url=https://my-contabilbot.vercel.app/
-```
 
 ### 4. Usage
 

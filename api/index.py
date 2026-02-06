@@ -53,23 +53,33 @@ def insert_expense(item, amount):
 
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
-    text = message.text.strip()
-    parts = text.split()
-    if len(parts) < 2:
-        bot.reply_to(message, "Wrong format! Use: [Amount] [Item]\nExample: 50 Coffee")
-        return
     try:
+        text = message.text.strip()
+        parts = text.split()
+        
+        # --- DEBUG MODE: Reply with what the bot sees ---
+        # This will prove if the new code is running!
+        if text.lower() == "version":
+            bot.reply_to(message, "✅ v2.0 (Supabase) is RUNNING!")
+            return
+
+        if len(parts) < 2:
+            # Show the user exactly what failed
+            bot.reply_to(message, f"⚠️ Error: I see '{text}'. I found {len(parts)} parts. I need 2.\nTry: 50 Pizza")
+            return
+
         amount = float(parts[0])
-        item = " ".join(parts[1:])
-        if insert_expense(item, amount):
-            insult = random.choice(INSULTS)
-            bot.reply_to(message, f"Recorded: {amount} lei for {item}. {insult}")
-        else:
-            bot.reply_to(
-                message, "Database error. Your spending wasn't tracked. Lucky you?"
-            )
-    except ValueError:
-        bot.reply_to(message, "Invalid amount. Use numbers only.\nExample: 50 Coffee")
+        item = ' '.join(parts[1:])
+
+        # Insert into Supabase
+        data = {"item": item, "amount": amount, "category": "Uncategorized"}
+        result = supabase.table("expenses").insert(data).execute()
+        
+        bot.reply_to(message, f"💸 Saved: {amount} for {item}.\n(Saved to Database!)")
+
+    except Exception as e:
+        # If it crashes, tell us WHY
+        bot.reply_to(message, f"🔥 CRITICAL ERROR:\n{str(e)}")
 
 
 @app.route("/", methods=["POST"])
